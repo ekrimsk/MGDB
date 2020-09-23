@@ -8,15 +8,6 @@ The database includes this/that and is always getting bigger and we encourage us
 
 explanation explanation 
 
-## Manufacturer Codes 
-
-* Maxon: MM 
-* Faulhaber: FH
-* Allied Motion: AM
-* Tmotor: TM 
-* Genesis: GN 
-
-For custom designs added to the database you can use "CU" as the manufacturer code or any other 2 letter combination that is not already reserved. 
 
 ## Motors 
 Motors are specified in files call `*_motors.csv`. When datasheets do not specify a given criteria, the value given in parenthesis should be used. A file can contain one or multiple motors but must contain the following column headers:
@@ -57,6 +48,16 @@ Gearboxes are specified in files call `*_gearboxes.csv`. When datasheets do not 
 1. **direction** - direction, 1: output same as input, -1: direction reversed (1)
 1. **max_int_torque** - maximum intermittent torque (inf) 
 1. **max_cont_torque** - maximum continuous torque (inf)
+
+## Manufacturer Codes 
+
+* Maxon: MM 
+* Faulhaber: FH
+* Allied Motion: AM
+* Tmotor: TM 
+* Genesis: GN 
+
+For custom designs added to the database you can use "CU" as the manufacturer code or any other 2 letter combination that is not already reserved. 
 
 ## Motor-Gearbox Compatibility 
 
