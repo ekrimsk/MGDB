@@ -48,7 +48,7 @@ methods (Access = public)
 
         if isempty(varargin)
             % TODO -- robustify 
-            database_paths = find_dirs('mgdb'); % look for a directory called mgdb
+            database_paths = find_dirs('MGDB'); % look for a directory called mgdb
         else 
             database_paths = find_dirs(varargin{1});
         end 
