@@ -10,7 +10,7 @@ Adding custom user defined motors and gearboxes to the database is as simple as 
 ## Motors 
 Motors are specified in files named `*_motors.csv`. When datasheets do not specify a given criteria, the value given in parenthesis should be used. A file can contain one or multiple motors but must contain the following column headers:
 
-1. **key** - 2 letter manufacturer code (see below) followed by motor _ID. This is the *unique* identifier for each motor in the database 
+1. **key** - 2 letter manufacturer code (see below) followed by motor _ID. This is the *unique* identifier for each motor in the database. Keys cannot contain "\","/", or "*" 
 1. **manufacturer** - name of company (e.g. Maxon) 
 1. **ID** - product code or unique identifier e.g. 64221 or DCX10L01EBKL489
 1. **type** - "DC" or "BLDC" 
@@ -34,12 +34,12 @@ Motors are specified in files named `*_motors.csv`. When datasheets do not speci
 
 ## Gearboxes 
 Gearboxes are specified in files named `*_gearboxes.csv`. When datasheets do not specify a given criteria, the value given in parenthesis should be used. A file can contain one or multiple gearboxes but must contain the following column headers:
-1. **key** - 2 letter manufacturer code followed by gearbox _ID. This is the *unique* identifier for each gearbox in the database 
+1. **key** - 2 letter manufacturer code followed by gearbox _ID. This is the *unique* identifier for each gearbox in the database. Keys cannot contain "\","/", or "*" 
 1. **manufacturer** - name of company (e.g. "Faulhaber" or "Allied_Motion")  
 1. **ID** - product code or unique identifier, when a company sells multiple gear ratios with the same ID append  "_R rounded_ratio" for each unique ratio, e.g. ABCD_R83 for a ratio of 83.2:1
 1. **type** - planetary, spur, cycloid, harmonic or koaxdrive
 1. **stages** - number of reduction stages (1)
-1. **ratio** - input to output speed ratio, a single number e.g. 90 for a 90:1 reduction. Use absolute ratios when available.  
+1. **ratio** - input to output speed ratio, a single number e.g. 90 for a 90:1 reduction. Use absolute ratios when available. 
 1. **mass** - in kg (nan)
 1. **inertia** - in kgm<sup>2</sup>. This is the inertia measured at the *input* of the gearbox. 
 1. **efficiency** - rated efficiency as a decimal e.g. 0.82 for 82% efficient (nan)
