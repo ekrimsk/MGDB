@@ -119,12 +119,10 @@ methods (Access = public)
         %  filters is a struct where each field is different criteria
         %  initialized to not filter out any possible choices 
         % 
-        obj.filters = default_filters;
+        obj.filters = default_filters();
         %
         %           Save Object Out So Can Be Loaded by motor selection 
         %   
-
-
 
 
         init_time = toc(init_tic); 
@@ -211,15 +209,13 @@ methods (Access = public)
     %
     %
     %
-        % with no extra args, clears all filters 
-        error('erez has not writen this code yet')
-        % with args -- only clears an individual filter 
-
-        % TODO -- come up with filter list 
+        def_filters = default_filters(); 
         if isempty(varargin)  % clear all 
-
+            obj.filters = def_filters(); % overwrite with defaults 
         else 
-
+            % TODO -- make robust (check valid criteria)
+            criteria = varargin{1};
+            obj.filter.(criteria) = def_filters.(criteria);
         end 
     end 
 
