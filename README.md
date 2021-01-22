@@ -22,6 +22,7 @@ Motors are specified in files named `*_motors.csv`. When datasheets do not speci
 1. **inertia** - kgm<sup>2</sup>
 1. **omega_nl** - No-load speed in rad/s 
 1. **I_nl** - no load current in Amps (nan)
+1. **I_nom** - maximum rms current in Amps (nan)
 1. **max_int_torque** - maximum intermittent torque in Nm (inf)
 1. **max_int_speed** - maximum intermittent speed in rad/s (inf)
 1. **max_cont_speed** - maximum continuous speed in rad/s(inf)

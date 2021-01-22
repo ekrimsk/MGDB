@@ -37,6 +37,11 @@ properties (GetAccess = public, SetAccess = private)
     filters 
     dd_key   
     num_combos
+
+    motor_filter_signs
+    gearbox_filter_signs
+    motor_fields
+    gearbox_fields 
 end 
 
 
@@ -58,6 +63,12 @@ methods (Access = public)
         obj.dd_key = 'DD'; 
         settings.verbose = 1;   % this is the only settings write now 
         obj.settings = settings; 
+
+        obj.motor_fields = get_motor_fields();
+        obj.gearbox_fields = get_gearbox_fields();
+        obj.motor_filter_signs = get_motor_filter_signs();
+        obj.gearbox_filter_signs = get_gearbox_filter_signs();
+
         % TODO --- accouint for input redirecting us to a new search path 
         % If no args look in a a default location
         
@@ -119,7 +130,7 @@ methods (Access = public)
         %  filters is a struct where each field is different criteria
         %  initialized to not filter out any possible choices 
         % 
-        obj.filters = default_filters();
+        obj.filters = obj.default_filters();
         %
         %           Save Object Out So Can Be Loaded by motor selection 
         %   
@@ -233,20 +244,34 @@ methods (Access = public)
     %                           inertia in kgm^2
     %       'manufacturer' - cell array of manufacturer names. If cell array
     %                is empty, than ALL motor/gearbox manufacturers are accepted
+    %       'motors' - for filtering on motor specific properties
+    %                       TODO more info 
+    %
+    %       'gearboxes' - for filtering on geabox specific properties 
+    %                       % TODO -- more info 
+
         fields = fieldnames(new_filters); 
         for ii = 1:numel(fields)
             criteria = fields{ii};
             value = new_filters.(criteria);
-            if ~iscell(value)
-                assert(value >= 0, 'update_filter: values must be nonnegative'); 
-            end 
-            if isfield(obj.filters, criteria)
-                obj.filters.(criteria) = value;
+            if strcmp(criteria, 'motors')
+                obj.update_motor_filters(values)
+            elseif strcmp(criteria, 'gearboxes')
+                obj.update_gearbox_filters(values)
             else 
-                warning('update_filter: invalid filter criteria: %s', criteria);
+                % TODO -- add char check 
+                if ~iscell(value)
+                    assert(value >= 0, 'update_filter: values must be nonnegative'); 
+                end 
+                if isfield(obj.filters, criteria)
+                    obj.filters.(criteria) = value;
+                else 
+                    warning('update_filter: invalid filter criteria: %s', criteria);
+                end 
             end 
         end 
     end 
+
 
     function update_settings(obj, new_settings)
         obj.settings.verbose = new_settings.verbose; 
@@ -282,6 +307,39 @@ methods (Access = private)
         end 
     end 
 
+
+    function update_motor_filters(obj, new_filters)
+        motor_filter = obj.filters.motors;
+        signs = obj.motor_filter_signs;
+        fields = fieldnames(new_filters); 
+        for ii = 1:numel(fields)
+            field = fields{ii}; 
+            if signs ~= '~'   % i.e. this field is setable as a filter 
+                error('Cannot set filter for motor field %s', field);
+            else 
+                motor_filter.(field) = new_filters.(field);
+            end 
+        end 
+        obj.filters.motors = motor_filter; 
+    end 
+
+
+    function update_gearbox_filters(obj, new_filters)
+        gearbox_filter = obj.filters.motors;
+        signs = obj.gearbox_filter_signs;
+        fields = fieldnames(new_filters); 
+        for ii = 1:numel(fields)
+            field = fields{ii}; 
+            if signs{ii} == '~'   % i.e. this field is setable as a filter 
+                error('Cannot set filter for gearbox field %s', field); 
+            else 
+                gearbox_filter.(field) = gearbox_filters.(field);
+            end 
+        end 
+        obj.filters.gearboxes = gearbox_filter; 
+    end 
+
+
     function [valid] = valid_combo(obj, motor_key, gearbox_key)
     %
     %
@@ -289,13 +347,24 @@ methods (Access = private)
     %
     %
         % Check this combination of motor and gearbox against the filters 
+        valid = true;
+
         motor = obj.motors(motor_key);
         gearbox = obj.gearboxes(gearbox_key);
 
         valid_manufs = obj.filters.manufacturer;
 
+        % filter motor and gearbox individually 
+        if ~obj.filter_motor(motor)
+            valid = false; 
+        elseif ~obj.filter_gearbox(gearbox)
+            valid = false;
+        end 
+
+
+        %% Filtering on combination 
+
         % Maximum speed 
-        valid = true;
         if (obj.filters.omega_max*gearbox.ratio) > motor.max_int_speed
             valid = false; 
         elseif (obj.filters.omega_rms*gearbox.ratio) > motor.max_cont_speed
@@ -312,8 +381,8 @@ methods (Access = private)
         elseif ~isempty(valid_manufs)  % if empty than any is fine 
             try 
                 % will throw an error if manuf string is now good 
-                validatestring(lower(motor.manufacturer), lower(valid_manufs));
-                validatestring(lower(gearbox.manufacturer), lower(valid_manufs));
+                validatestring(lower(motor.manufacturer),lower(valid_manufs));
+                validatestring(lower(gearbox.manufacturer),lower(valid_manufs));
             catch ME
                 if strcmp(ME.identifier,'MATLAB:unrecognizedStringChoice')
                     valid = false;
@@ -433,6 +502,103 @@ methods (Access = private)
     end 
 
 
+
+    function valid = filter_motor(motor)
+        valid = true; 
+        filters = obj.filters.motor_filters; 
+
+        fields = obj.motor_fields; 
+        signs = obj.motor_filter_signs; 
+
+        for i = 1:length(fields)
+            field = fields{i};
+            sgn = signs.(field);
+            motor_val = motor.(field); 
+            compare_val = filters.(field); 
+
+            if sgn == '~'
+                % skip
+            elseif sgn == '<'
+                if motor_val > compare_val 
+                    valid = false;
+                    break;
+                end 
+            elseif sgn == '>'
+                if motor_val < compare_val 
+                    valid = false;
+                    break;
+                end 
+            elseif sgn == '='
+                if ischar(compare_val)
+                    compare_val = {compare_val}; % should be cell array of strings
+                end 
+
+                try 
+                    validatestring(motor_val, compare_val); 
+                catch ME
+                    if strcmp(ME.identifier,'MATLAB:unrecognizedStringChoice')
+                        valid = false;
+                        break;
+                    else 
+                        rethrow(ME);
+                    end 
+                end 
+            else 
+                error('invalid sign');
+            end 
+        end 
+
+    end 
+
+
+    function valid = filter_gearbox(gearbox)
+        valid = true; 
+        filters = obj.filters.gearbox_filters; 
+
+        fields = obj.gearbox_fields; 
+        signs = obj.gearbox_filter_signs; 
+
+        for i = 1:length(fields)
+            field = fields{i};
+            sgn = signs.(field);
+            val = gearbox.(field); 
+            compare_val = filters.(field); 
+
+            if sgn == '~'
+                % skip
+            elseif sgn == '<'
+                if val > compare_val 
+                    valid = false;
+                    break;
+                end 
+            elseif sgn == '>'
+                if val < compare_val 
+                    valid = false;
+                    break;
+                end 
+            elseif sgn == '='
+                if ischar(compare_val)
+                    compare_val = {compare_val}; % should be cell array of strings
+                end 
+
+                try 
+                    validatestring(val, compare_val); 
+                catch ME
+                    if strcmp(ME.identifier,'MATLAB:unrecognizedStringChoice')
+                        valid = false;
+                        break;
+                    else 
+                        rethrow(ME);
+                    end 
+                end 
+            else 
+                error('invalid sign');
+            end 
+        end 
+
+    end 
+
+
     function vprintf(obj, priority, varargin)
     % vprintf - verbose printf 
     %   
@@ -459,7 +625,20 @@ methods (Access = private)
             end 
         end 
 
-        
+        keep = true(numel(motor_keys), 1);
+
+        % Remove any motor this is not valid 
+        for i = 1:numel(motor_keys)
+            [valid, reason_str] = isvalid_motor(motor_values{i});
+            if ~valid
+                keep(i) = false; % dont keep it
+                obj.vprintf(1, reason_str); 
+            end 
+        end 
+
+        motor_keys = motor_keys(keep);
+        motor_values = motor_values(keep); 
+
         if length(motor_keys) ~= length(unique(motor_keys))
             error('Multiple motors with same key specified');
         end 
@@ -489,10 +668,191 @@ methods (Access = private)
     end 
 
 
+    function def_filters = default_filters(obj)
+        def_filters.omega_max = 0;      % max speed 
+        def_filters.omega_rms = 0; 
+        def_filters.tau_rms = 0;    % rms output torque 
+        def_filters.tau_max = 0;    % max output torque 
+        def_filters.total_mass = inf; 
+        def_filters.effective_inertia = inf; 
+        def_filters.manufacturer = {}; % Empty means ANY is ok 
+
+        def_filters.motors = obj.default_motor_filter(); 
+        def_filters.gearboxes = obj.default_gearbox_filter(); 
+    end 
+
+    function def_filter = default_motor_filter(obj)
+        fields = obj.motor_fields; 
+        signs = obj.motor_filter_signs; 
+        for i = 1:length(fields)
+            field = fields{i};
+            sgn = signs.(field);
+            if sgn == '~'
+                % skip
+            elseif sgn == '<'
+                def_filter.(field) = inf;  
+            elseif sgn == '>'
+                def_filter.(field) = -inf;  
+            elseif sgn == '='
+                def_filter.(field) = {}; % anything 
+            else 
+                error('invalid sign');
+            end 
+        end 
+    end 
+
+
+    function def_filter = default_gearbox_filter(obj)
+        fields = obj.gearbox_fields; 
+        signs = obj.gearbox_filter_signs; 
+        for i = 1:length(fields)
+            field = fields{i};
+            sgn = signs.(field);
+            if sgn == '~'
+                % skip
+            elseif sgn == '<'
+                def_filter.(field) = inf;  
+            elseif sgn == '>'
+                def_filter.(field) = -inf;  
+            elseif sgn == '='
+                def_filter.(field) = {}; % anything 
+            else 
+                error('invalid sign');
+            end 
+        end 
+    end 
+
+
+
 end % end private methods 
 
 %=================== END CLASS DEF =========================
 end 
+
+
+%   NOTE: maybe move specification of fields and limits to another file
+%   for better software design (kind of nice to be self contained though)
+function fields = get_motor_fields()
+    fields = {'key', 'manufacturer', 'ID', 'type', 'V', 'k_t', 'R',...
+                     'L', 'mass', 'inertia', 'omega_nl', 'I_nl', 'I_nom'...
+                    'max_int_torque', 'max_int_speed', 'max_cont_speed',...
+                    'max_cont_power','coulomb_friction','viscous_friction',...
+                    'Rth1', 'Rth2'};
+end 
+
+function fields = get_gearbox_fields()
+    fields = {'key', 'manufacturer', 'ID', 'type', 'stages', 'ratio',...
+                     'mass', 'inertia', 'efficiency', 'direction',...
+                     'max_int_torque', 'max_cont_torque'};
+
+end 
+
+function signs = get_motor_filter_signs()
+%   TODO -- this needs lots of documenting 
+%
+%   '='  - direct match (only on strings)
+%   '<'  - motor parameter must be less than this 
+%   '>'  - motor parameter must be greater than this 
+%   '~'  - filtering on this parameter NOT allowed 
+    signs.key = '~';
+    signs.manufacturer = '=';
+    signs.ID = '~';
+    signs.type = '=';
+    signs.V = '>';
+    signs.k_t = '>';
+    signs.R = '<';
+    signs.L = '~';
+    signs.mass = '<';
+    signs.inertia = '<';
+    signs.omega_nl = '>';
+    signs.I_nl = '~';
+    signs.I_nom = '~'; 
+    signs.max_int_torque = '>';
+    signs.max_int_speed = '>';
+    signs.max_cont_speed = '>';
+    signs.max_cont_power = '>';
+    signs.coulomb_friction = '~';
+    signs.viscous_friction = '~';
+    signs.Rth1 = '~';
+    signs.Rth2 = '~';
+end 
+
+function signs = get_gearbox_filter_signs()
+%   TODO -- this needs lots of documenting 
+%
+%   '='  - direct match (only on strings)
+%   '<'  - motor parameter must be less than this 
+%   '>'  - motor parameter must be greater than this 
+%   '~'  - filtering on this parameter NOT allowed 
+    signs.key = '~';
+    signs.manufacturer = '=';
+    signs.ID = '~';
+    signs.type = '=';
+    signs.stages = '<';
+    signs.ratio = '<';
+    signs.mass = '<';
+    signs.inertia = '<';
+    signs.efficiency = '>';
+    signs.direction = '='; 
+    signs.max_int_torque = '>';
+    signs.max_cont_torque = '>';
+end
+
+
+% TODO --- funtion to update the individual motor + gearbox filters 
+
+
+
+
+function [valid, str] = isvalid_motor(motor)
+    valid = true; % unless prove otherwise
+    str = [];     % default for valid 
+
+    % validate individaul fields 
+    % each field has a required type 
+    % some fields will have bounds (e.g. nonnegativity constraints)
+    % limits on types 
+    % motor class and gearbox class to hold some values not a bad idea 
+
+    pos_vals = [motor.V, motor.R, motor.L, motor.mass, motor.inertia];
+
+
+    if ~valid_motor_friction(motor)
+        valid = false;
+        reason = ['invalid friction parameters. '...
+                        'Implied no-load current may be negative'];
+    elseif any(isnan(pos_vals)) || any(pos_vals < 0)
+        valid = false; 
+        reason = ['V, R, L, mass, inertia must all be non-negative reals'];
+    end 
+
+    if ~valid 
+        str = sprintf('Motor %s skipped: %s\n', motor.key, reason);
+    end 
+end 
+
+function valid = valid_motor_friction(motor)
+
+    % check if no-load current is nan 
+    valid = true; 
+    if isnan(motor.I_nl)
+        % maybe coulomb or viscous is spefied 
+        if ~isnan(motor.coulomb_friction) || ~isnan(motor.viscous_friction)
+            if (motor.coulomb_friction < 0) || (motor.viscous_friction < 0)
+                valid = false;
+            end 
+        else
+            % do nothing,
+            I_nl = (motor.V - motor.k_t*motor.omega_nl)/motor.R; 
+            if I_nl < 0 
+                valid = false; 
+            end 
+        end 
+    end 
+end 
+
+
+
 
 
 function dirs = find_dirs(tofind)
@@ -513,21 +873,12 @@ function dd_struct = direct_drive()
                         'max_int_torque', inf, 'max_cont_torque', inf);  
 end 
 
-function def_filters = default_filters()
-    def_filters.omega_max = 0;      % max speed 
-    def_filters.omega_rms = 0; 
-    def_filters.tau_rms = 0;    % rms output torque 
-    def_filters.tau_max = 0;    % max output torque 
-    def_filters.total_mass = inf; 
-    def_filters.effective_inertia = inf; 
-    def_filters.manufacturer = {}; % Empty means ANY is ok 
-end 
-
 
 
 
 function [motor_keys, motor_cells] = read_motor_file(motor_file)
-    T = readtable(motor_file);    % NOTE: read table can be slow - may be able to speed up by specifing delims and other things
+    % NOTE: read table can be slow - may be able to speed up by specifing delims and other things
+    T = readtable(motor_file);   
     motor_struct = table2struct(T);
     motor_keys = {motor_struct(:).key};
     motor_cells = num2cell(motor_struct); 
@@ -535,11 +886,7 @@ function [motor_keys, motor_cells] = read_motor_file(motor_file)
 
     col_names = T.Properties.VariableNames;
 
-    expected_names = {'key', 'manufacturer', 'ID', 'type', 'V', 'k_t', 'R',...
-                       'L', 'mass', 'inertia', 'omega_nl', 'I_nl',...
-                    'max_int_torque', 'max_int_speed', 'max_cont_speed',...
-                    'max_cont_power','coulomb_friction','viscous_friction',...
-                    'Rth1', 'Rth2'};
+    expected_names = get_motor_fields(); 
 
     if numel(col_names) ~= numel(expected_names)
         error('Motor file %s missing columns', motor_file)
@@ -554,6 +901,7 @@ function [motor_keys, motor_cells] = read_motor_file(motor_file)
 
 end 
 
+
 function [gearbox_keys, gearbox_cells] = read_gearbox_file(gearbox_file)
     T = readtable(gearbox_file);
     gearbox_struct = table2struct(T);
@@ -563,9 +911,7 @@ function [gearbox_keys, gearbox_cells] = read_gearbox_file(gearbox_file)
 
     col_names = T.Properties.VariableNames;
 
-    expected_names = {'key', 'manufacturer', 'ID', 'type', 'stages', 'ratio',...
-                     'mass', 'inertia', 'efficiency', 'direction',...
-                     'max_int_torque', 'max_cont_torque'};
+    expected_names = get_gearbox_fields(); 
 
     if numel(col_names) ~= numel(expected_names)
         error('Gearbox file %s missing columns', motor_file)
