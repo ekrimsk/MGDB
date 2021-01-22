@@ -220,7 +220,7 @@ methods (Access = public)
     %
     %
     %
-        def_filters = default_filters(); 
+        def_filters = obj.default_filters(); 
         if isempty(varargin)  % clear all 
             obj.filters = def_filters(); % overwrite with defaults 
         else 
