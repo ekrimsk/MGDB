@@ -255,9 +255,9 @@ methods (Access = public)
             criteria = fields{ii};
             value = new_filters.(criteria);
             if strcmp(criteria, 'motors')
-                obj.update_motor_filters(values)
+                obj.update_motor_filters(value)
             elseif strcmp(criteria, 'gearboxes')
-                obj.update_gearbox_filters(values)
+                obj.update_gearbox_filters(value)
             else 
                 % TODO -- add char check 
                 if ~iscell(value)
