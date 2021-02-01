@@ -394,6 +394,7 @@ function [valid, str] = isvalid_motor(motor)
         valid = false;
         reason = ['invalid friction parameters. '...
                         'Implied no-load current may be negative'];
+                        
     elseif any(isnan(pos_vals)) || any(pos_vals < 0)
         valid = false; 
         reason = ['V, R, L, mass, inertia, I_nom, must all be non-negative reals'];
