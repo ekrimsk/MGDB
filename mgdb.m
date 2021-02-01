@@ -30,18 +30,20 @@ classdef mgdb < matlab.mixin.Copyable
 %
 % See also CORDS
 properties (GetAccess = public, SetAccess = private)
-    motors          % containers.Map
-    gearboxes       % containers.Map
-    compatibility 
-    settings 
-    filters 
+    motors          % cells 
+    motor_map       % key to index key to index in cell array 
+
+    gearboxes       % cells 
+    gearbox_map     % key to index in cell array 
+
+    compatibility   % sparse 
     dd_key   
     num_combos
 
-    motor_filter_signs
-    gearbox_filter_signs
-    motor_fields
     gearbox_fields 
+    motor_fields
+
+    verbosity 
 end 
 
 
@@ -49,8 +51,6 @@ methods (Access = public)
 
 
     function obj = mgdb(varargin) %
-        % TODO -- add onputs to change database path 
-
         init_tic = tic; 
 
         if isempty(varargin)
@@ -61,29 +61,22 @@ methods (Access = public)
         end 
 
         obj.dd_key = 'DD'; 
-        settings.verbose = 1;   % this is the only settings write now 
-        obj.settings = settings; 
+        obj.verbosity = 1; 
 
         obj.motor_fields = get_motor_fields();
         obj.gearbox_fields = get_gearbox_fields();
-        obj.motor_filter_signs = get_motor_filter_signs();
-        obj.gearbox_filter_signs = get_gearbox_filter_signs();
 
-        % TODO --- accouint for input redirecting us to a new search path 
-        % If no args look in a a default location
-        
-        % Could look in other places too i guess
-        % cell array of paths 
+        %obj.motor_filter_signs = get_motor_filter_signs();
+        %obj.gearbox_filter_signs = get_gearbox_filter_signs();
+
 
         % motor files called "*_motors.csv"
         % gearbox files called "*_gearboxes.csv"
         % compatibility filed called "*_compatibility.csv"
-        % see somewhere else (TODO) for formatting 
+        % see github readme for formatting 
         for i = 1:length(database_paths)
             pth = database_paths{i};
-            % NOTE -- will this work on windows 
-            % TODO -- double checj and maybe rewrite with "fullfile" for 
-            % windows compatibility 
+            % TODO windows compatibility check 
             motor_file_tmp = dir(sprintf('%s/**/*_motors.csv', pth));
             gearbox_file_tmp = dir(sprintf('%s/**/*_gearboxes.csv', pth));
             compat_file_tmp = dir(sprintf('%s/**/*_compatibility.csv', pth));
@@ -109,170 +102,28 @@ methods (Access = public)
         obj.add_motors(motor_files); 
         % Read in Gearbox csvs --NOTE: may move to its own function taking in list 
         obj.add_gearboxes(gearbox_files); 
-
-        % NOTE: A motor might appear mulitpe times in multiple compatibility 
-        % files (could be compatible with multiple manufactureres for example)
-        % TODO -- move into add 
-  
         % add the 'dummy' gearbox for a direct drive option (compatible with all motors)
         
 
-        obj.gearboxes('DD') = direct_drive(); % add direct drive option to the map 
+        % obj.gearboxes('DD') = direct_drive(); % add direct drive option to the map 
 
-        obj.compatibility = containers.Map('KeyType', 'char', 'ValueType', 'any'); % value type will be other maps 
+        %obj.compatibility = containers.Map('KeyType', 'char', 'ValueType', 'any'); % value type will be other maps 
+        
+        num_motors = numel(obj.motors);
+        num_gearboxes = numel(obj.gearboxes); 
+
         % Read in compatibility csvs 
-        add_compatibility(obj, compat_files); % TODO -- all files 
-
-        %
-        %
-        %      Initialize Filters 
-        %
-        %  filters is a struct where each field is different criteria
-        %  initialized to not filter out any possible choices 
-        % 
-        obj.filters = obj.default_filters();
-        %
-        %           Save Object Out So Can Be Loaded by motor selection 
-        %   
+        add_compatibility(obj, compat_files); 
+        % Now add direct drive option to all gearboxes 
+        obj.compatibility(:, 1) = 1; % all motors compatible with direct drive 
 
 
         init_time = toc(init_tic); 
         fprintf('Added %d motors and %d gearboxes to database in %0.2f seconds\n',...
-                    obj.motors.Count, obj.gearboxes.Count, init_time); 
-
+                   num_motors, num_gearboxes, init_time); 
     end 
 
-
-
-    function [motor_combo_keys, gearbox_combo_keys] = get_combinations(obj)
-    %
-    %
-    %   Return structs instead of keys. This is less space efficient but it 
-    %   it makes it easier for the caller to use the outputs 
-    %
-    %
-
-        % get motor, gearbox key tuples 
-        motor_keys = obj.motors.keys; 
-
-        motor_combo_keys = {}; % will be a cell array of motor keys 
-        gearbox_combo_keys = {}; % will be a cell array of gb keys 
-
-        % NOTE: may want to allocate pretty big then trim 
-        cost_list = {}; % will be used to reindex and sort outputs 
-
-        obj.vprintf(1, 'Found %d initial combinations\n', obj.num_combos);
-        obj.filter_stats(); 
-
-        num_init_combos = 0; % sanittyc checeeasgs
-
-        % For each motor, get all compatible gearboxes 
-        for m_idx = 1:length(motor_keys)
-            motor_key = motor_keys{m_idx}; 
-            tmp_map = obj.compatibility(motor_key);
-            gb_keys = tmp_map.keys; 
-
-            num_init_combos = num_init_combos + length(gb_keys);
-
-            for gb_idx = 1:length(gb_keys) 
-                gb_key = gb_keys{gb_idx};
-                % Check if combo is valid given the filters
-                if obj.valid_combo(motor_key, gb_key)
-                    motor_combo_keys{end + 1} = motor_key;
-                    gearbox_combo_keys{end + 1} = gb_key; 
-                    cost_list{end + 1} = tmp_map(gb_key);
-                end               
-            end 
-        end 
-
-        num_valid_combos = length(motor_combo_keys);
-        num_removed = obj.num_combos - num_valid_combos;
-        obj.vprintf(1, 'Filtering removed %d combinations\n', num_removed);
-
-
-        % TODO -- some indicator of how many combos filtering removed
-        % will want verbosity settings --> pass in from caller
-        costs = cell2mat(cost_list); 
-        [~, reindex] = sort(costs);
-
-        % Sort by rankings -- reindex keys much faster than reindexing structs 
-        motor_combo_keys = motor_combo_keys(reindex);
-        gearbox_combo_keys = gearbox_combo_keys(reindex); 
-    end 
-
-    function update_rankings(obj, motor_keys, gearbox_keys, new_costs)
-
-        % check that motor_keys, gearbox_keys, new_costs are same length 
-
-        % support string arrays seperate from cell arrays of chars?? 
-        for i = 1:length(motor_keys)
-            motor_key = motor_keys{i};
-            if obj.compatibility.isKey(motor_key)
-                tmp_map = obj.compatibility(motor_key);  % by reference 
-                tmp_map(gearbox_keys{i}) = new_costs(i);
-            else 
-                error('Invalid motor key');
-            end 
-        end 
-    end 
-
-    function clear_filters(obj, varargin) 
-    %
-    %
-    %
-        def_filters = obj.default_filters(); 
-        if isempty(varargin)  % clear all 
-            obj.filters = def_filters(); % overwrite with defaults 
-        else 
-            % TODO -- make robust (check valid criteria)
-            criteria = varargin{1};
-            obj.filter.(criteria) = def_filters.(criteria);
-        end 
-    end 
-
-
-    function update_filters(obj, new_filters)  % TODO switch to struct base 
-    % update_filters
-    %   new_filters - struct with (any) of the following fields:
-    %       'omega_max' - lower cutoff for gearbox max_int_speed (rad/s) or 
-    %                   motor speed (when mulitplied by gear ratio)
-    %       'max_cont_speed' - lower cutoff for gearbox max_cont_speed (rad/s)
-    %                   or motor speed when (when multiplied by gear ratio)
-    %       'tau_max' -  lower bound cutoff for gearbox max_int
-    %       'total_mass' - upper bound cutoff of gearbox + motor mass (kg)
-    %       'effective_inerita' - upper bound cutoff for combined effective
-    %                           inertia in kgm^2
-    %       'manufacturer' - cell array of manufacturer names. If cell array
-    %                is empty, than ALL motor/gearbox manufacturers are accepted
-    %       'motors' - for filtering on motor specific properties
-    %                       TODO more info 
-    %
-    %       'gearboxes' - for filtering on geabox specific properties 
-    %                       % TODO -- more info 
-
-        fields = fieldnames(new_filters); 
-        for ii = 1:numel(fields)
-            criteria = fields{ii};
-            value = new_filters.(criteria);
-            if strcmp(criteria, 'motors')
-                obj.update_motor_filters(value)
-            elseif strcmp(criteria, 'gearboxes')
-                obj.update_gearbox_filters(value)
-            else 
-                % TODO -- add char check 
-                if ~iscell(value)
-                    assert(value >= 0, 'update_filter: values must be nonnegative'); 
-                end 
-                if isfield(obj.filters, criteria)
-                    obj.filters.(criteria) = value;
-                else 
-                    warning('update_filter: invalid filter criteria: %s', criteria);
-                end 
-            end 
-        end 
-    end 
-
-
+    % TODO -- if verbosity is the only setting remove the struct 
     function update_settings(obj, new_settings)
         obj.settings.verbose = new_settings.verbose; 
     end 
@@ -285,318 +136,10 @@ end
 
 methods (Access = private)
 
-    function filter_stats(obj)
-        fn = fieldnames(obj.filters); 
-
-        for ii = 1:length(fn)
-            criteria = fn{ii}; 
-            val = obj.filters.(criteria);
-            if ~isempty(val)
-                if iscell(val)
-                    for kk = 1:length(val)
-                        obj.vprintf(1, 'Filtering combination with %s: %s\n',...
-                        criteria, val{kk});
-                    end 
-                else 
-                    if all(~isinf(val)) && all(val~=0) 
-                        obj.vprintf(1, 'Filtering combination with %s: %0.2f\n',...
-                                        criteria, val);
-                    end 
-                end 
-            end 
-        end 
-    end 
+    
 
 
-    function update_motor_filters(obj, new_filters)
-        motor_filter = obj.filters.motors;
-        signs = obj.motor_filter_signs;
-        fields = fieldnames(new_filters); 
-        for ii = 1:numel(fields)
-            field = fields{ii}; 
-            if signs ~= '~'   % i.e. this field is setable as a filter 
-                error('Cannot set filter for motor field %s', field);
-            else 
-                motor_filter.(field) = new_filters.(field);
-            end 
-        end 
-        obj.filters.motors = motor_filter; 
-    end 
-
-
-    function update_gearbox_filters(obj, new_filters)
-        gearbox_filter = obj.filters.motors;
-        signs = obj.gearbox_filter_signs;
-        fields = fieldnames(new_filters); 
-        for ii = 1:numel(fields)
-            field = fields{ii}; 
-            if signs{ii} == '~'   % i.e. this field is setable as a filter 
-                error('Cannot set filter for gearbox field %s', field); 
-            else 
-                gearbox_filter.(field) = gearbox_filters.(field);
-            end 
-        end 
-        obj.filters.gearboxes = gearbox_filter; 
-    end 
-
-
-    function [valid] = valid_combo(obj, motor_key, gearbox_key)
-    %
-    %
-    %
-    %
-    %
-        % Check this combination of motor and gearbox against the filters 
-        valid = true;
-
-        motor = obj.motors(motor_key);
-        gearbox = obj.gearboxes(gearbox_key);
-
-        valid_manufs = obj.filters.manufacturer;
-
-        % filter motor and gearbox individually 
-        if ~obj.filter_motor(motor)
-            valid = false; 
-        elseif ~obj.filter_gearbox(gearbox)
-            valid = false;
-        end 
-
-
-        %% Filtering on combination 
-
-        % Maximum speed 
-        if (obj.filters.omega_max*gearbox.ratio) > motor.max_int_speed
-            valid = false; 
-        elseif (obj.filters.omega_rms*gearbox.ratio) > motor.max_cont_speed
-            valid = false; 
-        elseif obj.filters.tau_max > gearbox.max_int_torque
-            valid = false;
-        elseif obj.filters.tau_rms > gearbox.max_cont_torque
-            valid = false;
-        elseif motor.mass + gearbox.mass > obj.filters.total_mass 
-            valid = false; 
-        elseif (motor.inertia*gearbox.inertia)*(gearbox.ratio^2) ...
-                                    > obj.filters.effective_inertia
-            valid = false;
-        elseif ~isempty(valid_manufs)  % if empty than any is fine 
-            try 
-                % will throw an error if manuf string is now good 
-                validatestring(lower(motor.manufacturer),lower(valid_manufs));
-                validatestring(lower(gearbox.manufacturer),lower(valid_manufs));
-            catch ME
-                if strcmp(ME.identifier,'MATLAB:unrecognizedStringChoice')
-                    valid = false;
-                else 
-                    rethrow(ME);
-                end 
-            end 
-        end     
-    end 
-
-
-    function add_compatibility(obj, compat_files)
-    %
-    %
-    %
-    %
-    %
-        % could combine all compat files together to make simpler 
-        % assume this is done somewhere above this line of code 
-
-        gearbox_keys = obj.gearboxes.keys; % WILL RETURN THE KEYS SORTED ALPHABETICALLY 
-
-        % matlab containers isKey is very slow when the key is not a key 
-
-        % TODO -- check that compat files is cell array even if only 1 file 
-        num_combos = 0; 
-        for kk = 1:length(compat_files)
-            compat_file = compat_files{kk}; 
-            compat_fid = fopen(compat_file);
-
-            tline = fgetl(compat_fid);
-            line_count = 1; % for debug 
-            while ischar(tline)     % go through whole file
-                line_cells = strsplit(tline, ',');  % might be no compat 
-                motor_key = line_cells{1};
-
-                % First check that the motor key is actually present 
-
-                % For each motor add direct drive compatibility 
-
-                % Now get gearboxes 
-
-                % Loop through gearbox keys in the row
-                % As a O(nlogn) compromise heres the plan
-                % get the full list of gearbox keys O(n) 
-                % Sort the list of gearbox keys lexocigraphically O(nlogn)
-                % If test does NOT contain a wildcard, index directly into map
-                % If test key DOES contain a wildcard, find the corresponding keys 
-                % Since sorted, just need to find the first (lexicographicaly) wildcard match 
-                % and the last wildcard match and then everything in between is a match 
-                for i = 2:length(line_cells)
-                    gb_key = line_cells{i}; % may be partial key 
-                    %if obj.gearboxes.isKey(gb_key)  % slow 
-                    if endsWith(gb_key, '*')        % partial key -- any key that ends with star is a partial key
-                        new_gb_match_keys = find_matches(gearbox_keys, gb_key(1:end-1)); % TODO -- can rewrite a faster subroutine 
-                    elseif obj.gearboxes.isKey(gb_key)  % there needs to be a faster way 
-                        new_gb_match_keys = {gb_key};  % assumed cell array 
-                    else % error 
-                        warning('Gearbox %s not found in database', gb_key);
-                    end 
-
-                    % TODO -- if gb_match_keys is isempty? 
-                    if i == 2
-                        gb_match_keys = new_gb_match_keys;
-                    else % append 
-                        % could be more efficient to grow cell
-                        gb_match_keys = [gb_match_keys, new_gb_match_keys];
-                    end 
-
-                    if isempty(gb_match_keys)
-                        warning('No matching gearboxes found for %s', motor_key);
-                    end 
-                end
-
-                
-
-                if obj.compatibility.isKey(motor_key)
-                    % already have things added, append 
-                    for j = 1:length(gb_match_keys)
-                        gb_key = gb_match_keys{j};
-                        tmp_map = obj.compatibility(motor_key);     % should be copy by ref
-                        if tmp_map.isKey(gb_key)
-                            warning('redundant compatibilities specified')
-                        else 
-                            num_combos = num_combos + 1; 
-                            tmp_map(gb_key) = inf; % initialize all combination to have infinite cost 
-                        end 
-                    end 
-                else 
-                    % Add all the new ones together AND a direct drive option
-                    % It is much faster to add lots of things to the map
-                    % at once so it does not need to get resized and copied
-                    % NOTE: some might already be present though  
-                    inf_cell = num2cell(inf(1, length(gb_match_keys) + 1)); 
-                    obj.compatibility(motor_key) = containers.Map([obj.dd_key, gb_match_keys], inf_cell); 
-                    num_combos = num_combos + length(gb_match_keys) + 1; % + 1 for the dd as well 
-                end 
-
-
-                tline = fgetl(compat_fid);
-                line_count = line_count + 1; 
-            end % finish reading through lines of this file 
-            fclose(compat_fid); 
-        end % end looping through files 
-
-        % Now add direct drive for any motors that were skipped 
-        motor_keys = obj.motors.keys;
-        for m_idx = 1:length(motor_keys)
-            motor_key = motor_keys{m_idx};
-            if ~obj.compatibility.isKey(motor_key)
-                obj.compatibility(motor_key) = containers.Map(obj.dd_key, inf); 
-                num_combos = num_combos + 1; 
-            end 
-        end 
-
-        obj.num_combos = num_combos; 
-    end 
-
-
-
-    function valid = filter_motor(motor)
-        valid = true; 
-        filters = obj.filters.motor_filters; 
-
-        fields = obj.motor_fields; 
-        signs = obj.motor_filter_signs; 
-
-        for i = 1:length(fields)
-            field = fields{i};
-            sgn = signs.(field);
-            motor_val = motor.(field); 
-            compare_val = filters.(field); 
-
-            if sgn == '~'
-                % skip
-            elseif sgn == '<'
-                if motor_val > compare_val 
-                    valid = false;
-                    break;
-                end 
-            elseif sgn == '>'
-                if motor_val < compare_val 
-                    valid = false;
-                    break;
-                end 
-            elseif sgn == '='
-                if ischar(compare_val)
-                    compare_val = {compare_val}; % should be cell array of strings
-                end 
-
-                try 
-                    validatestring(motor_val, compare_val); 
-                catch ME
-                    if strcmp(ME.identifier,'MATLAB:unrecognizedStringChoice')
-                        valid = false;
-                        break;
-                    else 
-                        rethrow(ME);
-                    end 
-                end 
-            else 
-                error('invalid sign');
-            end 
-        end 
-
-    end 
-
-
-    function valid = filter_gearbox(gearbox)
-        valid = true; 
-        filters = obj.filters.gearbox_filters; 
-
-        fields = obj.gearbox_fields; 
-        signs = obj.gearbox_filter_signs; 
-
-        for i = 1:length(fields)
-            field = fields{i};
-            sgn = signs.(field);
-            val = gearbox.(field); 
-            compare_val = filters.(field); 
-
-            if sgn == '~'
-                % skip
-            elseif sgn == '<'
-                if val > compare_val 
-                    valid = false;
-                    break;
-                end 
-            elseif sgn == '>'
-                if val < compare_val 
-                    valid = false;
-                    break;
-                end 
-            elseif sgn == '='
-                if ischar(compare_val)
-                    compare_val = {compare_val}; % should be cell array of strings
-                end 
-
-                try 
-                    validatestring(val, compare_val); 
-                catch ME
-                    if strcmp(ME.identifier,'MATLAB:unrecognizedStringChoice')
-                        valid = false;
-                        break;
-                    else 
-                        rethrow(ME);
-                    end 
-                end 
-            else 
-                error('invalid sign');
-            end 
-        end 
-
-    end 
+    
 
 
     function vprintf(obj, priority, varargin)
@@ -606,12 +149,18 @@ methods (Access = private)
     %   varargin{:} gets passed to printf
     %
     %    
-        if priority >= obj.settings.verbose
+        if priority >= obj.verbosity
             fprintf(varargin{:}); 
         end 
     end 
 
+
     function [motor_keys, motor_values] = add_motors(obj, motor_files)
+    %
+    %
+    %
+    %
+    %
         for i = 1:length(motor_files)
             obj.vprintf(1, 'Reading motors from: %s\n', motor_files{i});
             [motor_keys_tmp, motor_cells_tmp] = read_motor_file(motor_files{i}); 
@@ -643,84 +192,162 @@ methods (Access = private)
             error('Multiple motors with same key specified');
         end 
 
-        obj.motors = containers.Map(motor_keys, motor_values);
+    
+        obj.motors = motor_values;  % cell array 
+        obj.motor_map = containers.Map(motor_keys, 1:length(motor_values)); 
     end 
 
     function [gb_keys, gb_values] = add_gearboxes(obj, gearbox_files)
+
+        gb_keys = {obj.dd_key};
+        gb_values = {direct_drive()}; 
+        % NOTE: direct drive added in instantioation 
         for i = 1:length(gearbox_files)
             obj.vprintf(1, 'Reading gearboxes from: %s\n', gearbox_files{i});
             [gb_keys_tmp, gb_cells_tmp] = read_gearbox_file(gearbox_files{i}); 
-            if i == 1
-                gb_keys = gb_keys_tmp;
-                gb_values = gb_cells_tmp;
-            else % append 
-                % NOTE may want a faster append method 
-                gb_keys = [gb_keys, gb_keys_tmp];
-                gb_values = [gb_values; gb_cells_tmp]; 
-            end 
+                            % NOTE may want a faster append method 
+     
+            gb_keys = [gb_keys, gb_keys_tmp];
+            gb_values = [gb_values; gb_cells_tmp]; 
+            
         end 
 
         if length(gb_keys) ~= length(unique(gb_keys))
             error('Multiple gearboxes with same key specified');
         end 
 
-        obj.gearboxes = containers.Map(gb_keys, gb_values);
+        % gearbox number 1 is always direct drive 
+        obj.gearboxes = gb_values;  % cell array 
+        obj.gearbox_map = containers.Map(gb_keys, 1:length(gb_values)); 
     end 
 
+    function add_compatibility(obj, compat_files)
+    %
+    %
+    %
+    %
+    %
+        % could combine all compat files together to make simpler 
+        % assume this is done somewhere above this line of code 
+        num_motors = numel(obj.motors);
+        num_gearboxes = numel(obj.gearboxes); 
+        compatibility = sparse([], [], [], num_motors, num_gearboxes,...
+                                 min(100*num_motors, num_motors*num_gearboxes)); 
 
-    function def_filters = default_filters(obj)
-        def_filters.omega_max = 0;      % max speed 
-        def_filters.omega_rms = 0; 
-        def_filters.tau_rms = 0;    % rms output torque 
-        def_filters.tau_max = 0;    % max output torque 
-        def_filters.total_mass = inf; 
-        def_filters.effective_inertia = inf; 
-        def_filters.manufacturer = {}; % Empty means ANY is ok 
+        gearbox_keys = obj.gearbox_map.keys; % WILL RETURN THE KEYS SORTED ALPHABETICALLY 
 
-        def_filters.motors = obj.default_motor_filter(); 
-        def_filters.gearboxes = obj.default_gearbox_filter(); 
-    end 
+        % matlab containers isKey is very slow when the key is not a key 
 
-    function def_filter = default_motor_filter(obj)
-        fields = obj.motor_fields; 
-        signs = obj.motor_filter_signs; 
-        for i = 1:length(fields)
-            field = fields{i};
-            sgn = signs.(field);
-            if sgn == '~'
-                % skip
-            elseif sgn == '<'
-                def_filter.(field) = inf;  
-            elseif sgn == '>'
-                def_filter.(field) = -inf;  
-            elseif sgn == '='
-                def_filter.(field) = {}; % anything 
-            else 
-                error('invalid sign');
+        % TODO -- check that compat files is cell array even if only 1 file 
+        num_combos = 0; 
+        for kk = 1:length(compat_files)
+            compat_file = compat_files{kk}; 
+            compat_fid = fopen(compat_file);
+
+            tline = fgetl(compat_fid);
+            line_count = 1; % for debug 
+            while ischar(tline)     % go through whole file
+                line_cells = strsplit(tline, ',');  % might be no compat 
+                motor_key = line_cells{1};
+
+                try 
+                    motor_idx = obj.motor_map(motor_key);   % the index   
+                catch ME 
+                    error('Motor in compatibility file not in database')
+                end 
+
+                % First check that the motor key is actually present 
+
+                % For each motor add direct drive compatibility 
+
+                % Now get gearboxes 
+                % Loop through gearbox keys in the row
+                % As a O(nlogn) compromise heres the plan
+                % get the full list of gearbox keys O(n) 
+                % Sort the list of gearbox keys lexocigraphically O(nlogn)
+                % If test does NOT contain a wildcard, index directly into map
+                % If test key DOES contain a wildcard, find the corresponding keys 
+                % Since sorted, just need to find the first (lexicographicaly) wildcard match 
+                % and the last wildcard match and then everything in between is a match 
+                for i = 2:length(line_cells)
+                    gb_key = line_cells{i}; % may be partial key 
+
+                    if endsWith(gb_key, '*')        % partial key -- any key that ends with star is a partial key
+                        new_gb_match_keys = find_matches(gearbox_keys, gb_key(1:end-1)); % TODO -- can rewrite a faster subroutine 
+                    % there needs to be a faster way 
+                    elseif obj.gearbox_map.isKey(gb_key) 
+                        new_gb_match_keys = {gb_key};  % assumed cell array 
+                    else % error 
+                        warning('Gearbox %s not found in database', gb_key);
+                    end 
+
+                    % TODO -- if gb_match_keys is isempty? 
+                    if i == 2
+                        gb_match_keys = new_gb_match_keys;
+                    else % append 
+                        % could be more efficient to grow cell
+                        gb_match_keys = [gb_match_keys, new_gb_match_keys];
+                    end 
+
+                    if isempty(gb_match_keys)
+                        warning('No matching gearboxes found for %s', motor_key);
+                    end 
+                end
+
+                % get the indices for all the match keys 
+                for i = 1:length(gb_match_keys)
+                    gb_idx = obj.gearbox_map(gb_match_keys{i});
+                    compatibility(motor_idx, gb_idx) = 1; 
+                end 
+
+                %{
+                if obj.compatibility.isKey(motor_key)
+                    % already have things added, append 
+                    for j = 1:length(gb_match_keys)
+                        gb_key = gb_match_keys{j};
+                        tmp_map = obj.compatibility(motor_key);     % should be copy by ref
+                        if tmp_map.isKey(gb_key)
+                            warning('redundant compatibilities specified')
+                        else 
+                            num_combos = num_combos + 1; 
+                            tmp_map(gb_key) = inf; % initialize all combination to have infinite cost 
+                        end 
+                    end 
+                else 
+                    % Add all the new ones together AND a direct drive option
+                    % It is much faster to add lots of things to the map
+                    % at once so it does not need to get resized and copied
+                    % NOTE: some might already be present though  
+                    inf_cell = num2cell(inf(1, length(gb_match_keys) + 1)); 
+                    obj.compatibility(motor_key) = containers.Map([obj.dd_key, gb_match_keys], inf_cell); 
+                    num_combos = num_combos + length(gb_match_keys) + 1; % + 1 for the dd as well 
+                end 
+                %}
+
+
+                tline = fgetl(compat_fid);
+                line_count = line_count + 1; 
+            end % finish reading through lines of this file 
+            fclose(compat_fid); 
+        end % end looping through files 
+
+        % Now add direct drive for any motors that were skipped 
+        %{
+        motor_keys = obj.motors.keys;
+        for m_idx = 1:length(motor_keys)
+            motor_key = motor_keys{m_idx};
+            if ~obj.compatibility.isKey(motor_key)
+                obj.compatibility(motor_key) = containers.Map(obj.dd_key, inf); 
+                num_combos = num_combos + 1; 
             end 
         end 
+        %} 
+        num_combos = nnz(compatibility); 
+        obj.num_combos = num_combos; 
+        obj.compatibility = compatibility; 
     end 
 
 
-    function def_filter = default_gearbox_filter(obj)
-        fields = obj.gearbox_fields; 
-        signs = obj.gearbox_filter_signs; 
-        for i = 1:length(fields)
-            field = fields{i};
-            sgn = signs.(field);
-            if sgn == '~'
-                % skip
-            elseif sgn == '<'
-                def_filter.(field) = inf;  
-            elseif sgn == '>'
-                def_filter.(field) = -inf;  
-            elseif sgn == '='
-                def_filter.(field) = {}; % anything 
-            else 
-                error('invalid sign');
-            end 
-        end 
-    end 
 
 
 
@@ -747,59 +374,6 @@ function fields = get_gearbox_fields()
 
 end 
 
-function signs = get_motor_filter_signs()
-%   TODO -- this needs lots of documenting 
-%
-%   '='  - direct match (only on strings)
-%   '<'  - motor parameter must be less than this 
-%   '>'  - motor parameter must be greater than this 
-%   '~'  - filtering on this parameter NOT allowed 
-    signs.key = '~';
-    signs.manufacturer = '=';
-    signs.ID = '~';
-    signs.type = '=';
-    signs.V = '>';
-    signs.k_t = '>';
-    signs.R = '<';
-    signs.L = '~';
-    signs.mass = '<';
-    signs.inertia = '<';
-    signs.omega_nl = '>';
-    signs.I_nl = '~';
-    signs.I_nom = '~'; 
-    signs.max_int_torque = '>';
-    signs.max_int_speed = '>';
-    signs.max_cont_speed = '>';
-    signs.max_cont_power = '>';
-    signs.coulomb_friction = '~';
-    signs.viscous_friction = '~';
-    signs.Rth1 = '~';
-    signs.Rth2 = '~';
-end 
-
-function signs = get_gearbox_filter_signs()
-%   TODO -- this needs lots of documenting 
-%
-%   '='  - direct match (only on strings)
-%   '<'  - motor parameter must be less than this 
-%   '>'  - motor parameter must be greater than this 
-%   '~'  - filtering on this parameter NOT allowed 
-    signs.key = '~';
-    signs.manufacturer = '=';
-    signs.ID = '~';
-    signs.type = '=';
-    signs.stages = '<';
-    signs.ratio = '<';
-    signs.mass = '<';
-    signs.inertia = '<';
-    signs.efficiency = '>';
-    signs.direction = '='; 
-    signs.max_int_torque = '>';
-    signs.max_cont_torque = '>';
-end
-
-
-% TODO --- funtion to update the individual motor + gearbox filters 
 
 
 
@@ -814,8 +388,7 @@ function [valid, str] = isvalid_motor(motor)
     % limits on types 
     % motor class and gearbox class to hold some values not a bad idea 
 
-    pos_vals = [motor.V, motor.R, motor.L, motor.mass, motor.inertia];
-
+    pos_vals = [motor.V, motor.R, motor.L, motor.mass, motor.inertia, motor.I_nom];
 
     if ~valid_motor_friction(motor)
         valid = false;
@@ -823,7 +396,7 @@ function [valid, str] = isvalid_motor(motor)
                         'Implied no-load current may be negative'];
     elseif any(isnan(pos_vals)) || any(pos_vals < 0)
         valid = false; 
-        reason = ['V, R, L, mass, inertia must all be non-negative reals'];
+        reason = ['V, R, L, mass, inertia, I_nom, must all be non-negative reals'];
     end 
 
     if ~valid 
@@ -988,12 +561,3 @@ function cmp = cstrcmp( a, b )
 end
 
 
-%{
-% TODO -- move to utility 
-function idx = find_in_sorted()
-
-    % TODO -- actually write this, for now, lazy :) 
-
-
-end 
-%} 
