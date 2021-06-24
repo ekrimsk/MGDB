@@ -1,0 +1,13 @@
+For AK series the gearboxes are made up because these actually come in an 
+integrated module. 
+
+The motor inertia is not given so it is estimated from motors with similar 
+parameters. No load speeds are estimated visually  from the supplied graphs and
+multiplied by the reduction ratios. Nominal torques are given from the continuous
+torque on the plot divided by the gearbox ratio and torque constant (same as rated current).
+The computed no load current would be negative for the AK motors so an arbitrary
+value of 0.1 A is being used.
+If anyone has measurements that would be greatly appreciated. 
+
+
+For AK60_6 and AK80_6, motor inertia estimated from published values for U8 KV100 
