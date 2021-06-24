@@ -462,16 +462,18 @@ function [motor_keys, motor_cells] = read_motor_file(motor_file)
 
     expected_names = get_motor_fields(); 
 
-    if numel(col_names) ~= numel(expected_names)
+    if ~all(ismember(expected_names, col_names))
         error('Motor file %s missing columns', motor_file)
     end 
 
+    % Commented out 6/23/21 to allow extra cols 
+    %{
     for i = 1:length(col_names)
         if ~strcmp(col_names{i}, expected_names{i})
             error('Invalid motor column name %s', col_names{i});
         end 
     end 
-
+    %} 
 
 end 
 
