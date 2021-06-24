@@ -1,0 +1,3 @@
+key,manufacturer,ID,type,stages,ratio,mass,inertia,efficiency,direction,max_int_torque,max_cont_torque
+TM_AK_60_6_GB,Tmotor,AK_60_6_GB,planetary,2,6,0,0,0.98,1,inf,inf
+TM_AK_80_6_GB,Tmotor,AK_80_6_GB,planetary,2,6,0,0,0.98,1,inf,inf

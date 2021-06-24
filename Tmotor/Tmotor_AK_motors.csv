@@ -1,0 +1,3 @@
+key,manufacturer,ID,type,V,k_t,k_e,R,L,mass,inertia,diameter,length,omega_nl,I_nl,I_nom,max_int_torque,max_int_speed,max_cont_speed,max_cont_power,coulomb_friction,viscous_friction,Rth1,Rth2
+TM_AK_60_6,Tmotor,AK_60_6,BLDC,24,0.068,0.067,0.262,0.000112,0.315,0.00012,0.076,0.0365,351.8,0.1,7.4,1.66,inf,inf,inf,,,,
+TM_AK_80_6,Tmotor,AK_80_6,BLDC,24,0.091,0.091,0.17,0.000057,0.485,0.00012,0.098,0.0385,289,0.1,12,2.06,inf,inf,inf,,,,
