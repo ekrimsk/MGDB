@@ -16,10 +16,13 @@ Motors are specified in files named `*_motors.csv`. When datasheets do not speci
 1. **type** - "DC" or "BLDC" 
 1. **V** - Nominal Voltage in Volts
 1. **k_t** - Torque Constant in Nm/A
+1. **k_e** - Velociy Constant in Vs/rad (same as torque constant if not given)
 1. **R** - Winding Resistance in Ohms 
 1. **L** - Inductance in Henries
 1. **mass** - in kg 
-1. **inertia** - kgm<sup>2</sup>
+1. **inertia** - in kgm<sup>2</sup>
+1. **diameter** - in m (nan)
+1. **length** - in m (nan)
 1. **omega_nl** - No-load speed in rad/s 
 1. **I_nl** - no load current in Amps (nan)
 1. **I_nom** - maximum rms current in Amps (nan)
@@ -43,6 +46,8 @@ Gearboxes are specified in files named `*_gearboxes.csv`. When datasheets do not
 1. **ratio** - input to output speed ratio, a single number e.g. 90 for a 90:1 reduction. Use absolute ratios when available. 
 1. **mass** - in kg (nan)
 1. **inertia** - in kgm<sup>2</sup>. This is the inertia measured at the *input* of the gearbox. 
+1. **diameter** - in m (nan)
+1. **length** - in m (nan)
 1. **efficiency** - rated efficiency as a decimal e.g. 0.82 for 82% efficient (nan)
 1. **direction** - direction, 1: output same as input, -1: direction reversed (1)
 1. **max_int_torque** - maximum intermittent torque in Nm (inf) 
