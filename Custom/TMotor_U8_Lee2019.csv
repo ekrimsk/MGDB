@@ -1,2 +1,0 @@
-key,manufacturer,ID,type,V,k_t,R,L,mass,inertia,omega_nl,I_nl,I_nom,max_int_torque,max_int_speed,max_cont_speed,max_cont_power,coulomb_friction,viscous_friction,Rth1,Rth2
-TM_U8_KV100,Tmotor,U8_KV100,BLDC,36,0.14,0.186,1.38E-04,0.24,1.20E-04,,,7.6,3.332,,,,9.10E-03,1.60E-04,0.5,4.2
